@@ -1,71 +1,100 @@
-using UnityEngine;
-using UnityEngine.InputSystem;
+using System;                      
+using UnityEngine;                
+using UnityEngine.InputSystem;     
 
-public class PlayerController : MonoBehaviour
+namespace ___WorkData.Scripts.Player   
 {
-    #region Insepctor Variables
-
-    [SerializeField]
-    private float walkingSpeed;
-    
-    #endregion
-
-    #region Private Variables
-
-    private InputSystem_Actions _inputActions;
-    private InputAction _moveAction;
-    private InputAction _jumpAction;
-    private InputAction _attackAction;
-    private InputAction _interactAction;
-    private InputAction _lookAction;
-    private InputAction _crouchAction;
-    private InputAction _previousAction;
-    private InputAction _nextAction;
-    private InputAction _sprintAction;
-    private InputAction _rollAction;
-    public Vector2 _moveInput;
-    #endregion
-
-    #region Unity Event Functions
-    /// <summary>
-    /// 
-    /// </summary>
-    private void Awake()
+  
+    [RequireComponent(typeof(Rigidbody2D))]
+    public class PlayerController : MonoBehaviour
     {
-        _inputActions = new InputSystem_Actions();
-        _moveAction = _inputActions.Player.Move;
-        _jumpAction = _inputActions.Player.Jump;
-        _attackAction = _inputActions.Player.Attack;
-        _interactAction = _inputActions.Player.Interact;
-        _lookAction = _inputActions.Player.Look;
-        _crouchAction = _inputActions.Player.Crouch;
-        _previousAction = _inputActions.Player.Previous;
-        _nextAction = _inputActions.Player.Next;
-        _sprintAction = _inputActions.Player.Sprint;
-        _rollAction = _inputActions.Player.Roll;
+        #region Inspector Variables
+      
+
+        [SerializeField] private float walkingSpeed = 5f;  
+        [SerializeField] private float runningSpeed = 10f; 
+        #endregion
+
+        #region Private Variables
+      
+        private InputSystem_Actions _inputActions;
+
+        private InputAction _moveAction;
+        private InputAction _jumpAction;
+        private InputAction _sprintAction;
+        private InputAction _attackAction;
+        private InputAction _lookAction;
+        private InputAction _interactAction;
+        private InputAction _crouchAction;
+        private InputAction _previousAction;
+        private InputAction _nextAction;
+        private InputAction _rollAction;
+
+    
+        private Vector2 _moveInput;
+
+        private Rigidbody2D rb;
+        #endregion
+
        
 
-    }
-    private void OnEnable()
-    {
-        _inputActions.Enable();
-        _moveAction.performed += Move;
-        _moveAction.canceled += Move;
+        private void Awake()
+        {
+          
+            _inputActions = new InputSystem_Actions();
 
-    }
-    private void OnDisable()
-    {
-        _inputActions.Enable();
-        _moveAction.performed += Move;
-        _moveAction.canceled += Move;
+       
+            _moveAction = _inputActions.Player.Move;
+            _jumpAction = _inputActions.Player.Jump;
+            _sprintAction = _inputActions.Player.Sprint;
+            _attackAction = _inputActions.Player.Attack;
+            _lookAction = _inputActions.Player.Look;
+            _interactAction = _inputActions.Player.Interact;
+            _crouchAction = _inputActions.Player.Crouch;
+            _previousAction = _inputActions.Player.Previous;
+            _nextAction = _inputActions.Player.Next;
+            _rollAction = _inputActions.Player.Roll;
 
-    }
-    #endregion 
+           
+            rb = GetComponent<Rigidbody2D>();
+        }
 
-    #region Input 
-    private void Move(InputAction.CallbackContext ctx)
-    {
-        _moveInput = ctx.ReadValue<Vector2>();
+        private void OnEnable()
+        {
+           
+            _inputActions.Enable();
+
+            
+            _moveAction.performed += Move;
+            _moveAction.canceled += Move;
+        }
+
+       
+
+        private void FixedUpdate()
+        {
+          
+            rb.linearVelocity = new Vector2(_moveInput.x * walkingSpeed, rb.linearVelocity.y);
+
+        }
+
+        private void OnDisable()
+        {
+           
+            _moveAction.performed -= Move;
+            _moveAction.canceled -= Move;
+
+           
+            _inputActions.Disable();
+        }
+
+        #region Input
+       
+        private void Move(InputAction.CallbackContext ctx)
+        {
+            
+            _moveInput = ctx.ReadValue<Vector2>();
+        }
+        #endregion
     }
-    #endregion
 }
