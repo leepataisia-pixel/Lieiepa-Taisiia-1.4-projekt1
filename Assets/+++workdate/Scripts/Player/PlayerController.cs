@@ -30,7 +30,11 @@ namespace ___WorkData.Scripts.Player
         private InputAction _nextAction;
         private InputAction _rollAction;
 
-    
+        _rb = GetComponent<Rigidbody2D>();
+        _sr = GetComponent<SpriteRenderer>();
+        _sr.flipX = true;
+
+
         private Vector2 _moveInput;
 
         private Rigidbody2D rb;
@@ -40,6 +44,7 @@ namespace ___WorkData.Scripts.Player
 
         private void Awake()
         {
+          
           
             _inputActions = new InputSystem_Actions();
 
@@ -55,7 +60,7 @@ namespace ___WorkData.Scripts.Player
             _nextAction = _inputActions.Player.Next;
             _rollAction = _inputActions.Player.Roll;
 
-           
+
             rb = GetComponent<Rigidbody2D>();
         }
 
