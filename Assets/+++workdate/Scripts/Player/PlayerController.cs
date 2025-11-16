@@ -1,71 +1,114 @@
 using UnityEngine;
 using UnityEngine.InputSystem;
 
-public class PlayerController : MonoBehaviour
+namespace ___WorkData.Scripts.Player
 {
-    #region Insepctor Variables
-
-    [SerializeField]
-    private float walkingSpeed;
-    
-    #endregion
-
-    #region Private Variables
-
-    private InputSystem_Actions _inputActions;
-    private InputAction _moveAction;
-    private InputAction _jumpAction;
-    private InputAction _attackAction;
-    private InputAction _interactAction;
-    private InputAction _lookAction;
-    private InputAction _crouchAction;
-    private InputAction _previousAction;
-    private InputAction _nextAction;
-    private InputAction _sprintAction;
-    private InputAction _rollAction;
-    public Vector2 _moveInput;
-    #endregion
-
-    #region Unity Event Functions
-    /// <summary>
-    /// 
-    /// </summary>
-    private void Awake()
+    [RequireComponent(typeof(Rigidbody2D))]
+    [RequireComponent(typeof(Animator))]
+    [RequireComponent(typeof(SpriteRenderer))]
+    public class PlayerController : MonoBehaviour
     {
-        _inputActions = new InputSystem_Actions();
-        _moveAction = _inputActions.Player.Move;
-        _jumpAction = _inputActions.Player.Jump;
-        _attackAction = _inputActions.Player.Attack;
-        _interactAction = _inputActions.Player.Interact;
-        _lookAction = _inputActions.Player.Look;
-        _crouchAction = _inputActions.Player.Crouch;
-        _previousAction = _inputActions.Player.Previous;
-        _nextAction = _inputActions.Player.Next;
-        _sprintAction = _inputActions.Player.Sprint;
-        _rollAction = _inputActions.Player.Roll;
-       
+        public static readonly int Hash_MovementValue = Animator.StringToHash("MovementValue");
+        public static readonly int Hash_JumpTrigger   = Animator.StringToHash("Jump");
+        public static readonly int Hash_RollTrigger   = Animator.StringToHash("Roll");
+        public static readonly int Hash_XInput        = Animator.StringToHash("XInput");
+        public static readonly int Hash_YInput        = Animator.StringToHash("YInput");
 
-    }
-    private void OnEnable()
-    {
-        _inputActions.Enable();
-        _moveAction.performed += Move;
-        _moveAction.canceled += Move;
+        [SerializeField] private float walkingSpeed = 5f;
+        [SerializeField] private float jumpSpeed    = 5f;
+        [SerializeField] private float rollSpeed    = 5f;
+        [SerializeField] private Animator animator;
 
-    }
-    private void OnDisable()
-    {
-        _inputActions.Enable();
-        _moveAction.performed += Move;
-        _moveAction.canceled += Move;
+        private InputSystem_Actions _inputActions;
+        private InputAction _moveAction;
+        private InputAction _jumpAction;
+        private InputAction _rollAction;
 
-    }
-    #endregion 
+        private Vector2 _moveInput;
+        private Rigidbody2D _rb;
+        private SpriteRenderer _spriteRenderer;
+        private bool _lookingToTheRight = true;
 
-    #region Input 
-    private void Move(InputAction.CallbackContext ctx)
-    {
-        _moveInput = ctx.ReadValue<Vector2>();
+        private void Awake()
+        {
+            _inputActions = new InputSystem_Actions();
+
+            _moveAction = _inputActions.Player.Move;
+            _jumpAction = _inputActions.Player.Jump;
+            _rollAction = _inputActions.Player.Roll;
+
+            _rb            = GetComponent<Rigidbody2D>();
+            animator       = GetComponent<Animator>();
+            _spriteRenderer = GetComponent<SpriteRenderer>();
+        }
+
+        private void OnEnable()
+        {
+            _inputActions.Enable();
+
+            _moveAction.performed += Move;
+            _moveAction.canceled  += Move;
+
+            _jumpAction.performed += OnJump;
+            _rollAction.performed += OnRoll;
+        }
+
+        private void FixedUpdate()
+        {
+            _rb.linearVelocity = new Vector2(_moveInput.x * walkingSpeed, _rb.linearVelocity.y);
+
+            // значение для BlendTree (Idle/Run)
+            animator.SetFloat(Hash_MovementValue, Mathf.Abs(_rb.linearVelocity.x));
+        }
+
+        private void OnDisable()
+        {
+            _moveAction.performed -= Move;
+            _moveAction.canceled  -= Move;
+            _jumpAction.performed -= OnJump;
+            _rollAction.performed -= OnRoll;
+
+            _inputActions.Disable();
+        }
+
+        private void Move(InputAction.CallbackContext ctx)
+        {
+            _moveInput = ctx.ReadValue<Vector2>();
+
+            // параметры для Animator как в видео
+            animator.SetFloat(Hash_XInput, _moveInput.x);
+            animator.SetFloat(Hash_YInput, _moveInput.y);
+
+            // логика направления
+            if (_moveInput.x > 0f)
+                _lookingToTheRight = true;
+            else if (_moveInput.x < 0f)
+                _lookingToTheRight = false;
+
+            UpdateRotation();
+        }
+
+        private void UpdateRotation()
+        {
+            // вместо поворота transform — переворачиваем спрайт
+            _spriteRenderer.flipX = !_lookingToTheRight;
+        }
+
+        private void OnJump(InputAction.CallbackContext ctx)
+        {
+            if (!ctx.performed) return;
+
+            _rb.linearVelocity = new Vector2(_rb.linearVelocity.x, jumpSpeed);
+            animator.SetTrigger(Hash_JumpTrigger);
+        }
+
+        private void OnRoll(InputAction.CallbackContext ctx)
+        {
+            if (!ctx.performed) return;
+
+            float direction = Mathf.Sign(_moveInput.x);
+            _rb.linearVelocity = new Vector2(direction * rollSpeed, _rb.linearVelocity.y);
+            animator.SetTrigger(Hash_RollTrigger);
+        }
     }
-    #endregion
 }
