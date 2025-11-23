@@ -559,7 +559,7 @@ GameObject:
   - component: {fileID: 806280065}
   - component: {fileID: 806280064}
   m_Layer: 0
-  m_Name: Tilemap
+  m_Name: background
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -7182,7 +7182,7 @@ GameObject:
   - component: {fileID: 1522279797}
   - component: {fileID: 1522279796}
   m_Layer: 0
-  m_Name: Tilemap
+  m_Name: calons
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -8730,7 +8730,7 @@ GameObject:
   - component: {fileID: 2009663254}
   - component: {fileID: 2009663253}
   m_Layer: 0
-  m_Name: Tilemap
+  m_Name: Platforms
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
