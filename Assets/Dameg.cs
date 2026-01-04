@@ -1,27 +1,29 @@
-using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
+using System.Collections.Generic;
 
 public class Damage : MonoBehaviour
 {
-    public playerHealth pHealth;
-    public float damage;
+    [SerializeField] private float damage = 20f;
+    [SerializeField] private float hitCooldown = 0.6f;
+    [SerializeField] private float ignoreFirstSeconds = 0.2f;
 
-    void Start()
-    {
-        
-    }
+    private readonly Dictionary<int, float> _nextAllowedHitTime = new();
 
-    void Update()
+    private void OnTriggerEnter2D(Collider2D other)
     {
-        
-    }
+        if (!other.CompareTag("Player")) return;
 
-    private void OnCollisionEnter2D(Collision2D other)
-    {
-        if (other.gameObject.CompareTag("Player"))
-        {
-            pHealth.health -= damage;
-        }
+        // Игнорируем первые доли секунды после старта сцены
+        if (Time.timeSinceLevelLoad < ignoreFirstSeconds) return;
+
+        var ph = other.GetComponent<playerHealth>();
+        if (ph == null) return;
+
+        int id = other.gameObject.GetInstanceID();
+        if (_nextAllowedHitTime.TryGetValue(id, out float nextTime) && Time.time < nextTime)
+            return;
+
+        _nextAllowedHitTime[id] = Time.time + hitCooldown;
+        ph.TakeDamage(damage);
     }
 }

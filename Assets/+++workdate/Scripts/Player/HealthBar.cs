@@ -1,26 +1,31 @@
-using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
 
 public class playerHealth : MonoBehaviour
 {
-    public float health;
-    public float maxHealth;
+    [Header("HealthBar")]
+    public float maxHealth = 100f;
+    public float health = 100f;
+
+    [Header("UI")]
     public Image healthBar;
 
-    void Start()
+    private void Start()
     {
-        maxHealth = health;
+        maxHealth = Mathf.Max(1f, maxHealth);
+        health = Mathf.Clamp(health, 0f, maxHealth);
+        UpdateBar();
     }
 
-    void Update()
+    public void TakeDamage(float amount)
     {
-        healthBar.fillAmount = Mathf.Clamp(health / maxHealth, 0, 1);
+        health = Mathf.Clamp(health - amount, 0f, maxHealth);
+        UpdateBar();
+    }
 
-        if (health <= 0)
-        {
-            Destroy(gameObject);
-        }
+    private void UpdateBar()
+    {
+        if (healthBar == null) return;
+        healthBar.fillAmount = Mathf.Clamp01(health / maxHealth);
     }
 }

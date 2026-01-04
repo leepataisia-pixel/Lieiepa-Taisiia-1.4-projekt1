@@ -8,8 +8,10 @@ namespace ___WorkData.Scripts.Player
     [RequireComponent(typeof(Rigidbody2D))]
     [RequireComponent(typeof(Animator))]
     [RequireComponent(typeof(SpriteRenderer))]
+    [RequireComponent(typeof(Collider2D))]
     public class PlayerController : MonoBehaviour
     {
+        // Animator параметр-имена (должны совпадать 1:1 с Animator)
         private static readonly int Hash_Movement      = Animator.StringToHash("Movement");
         private static readonly int Hash_ActionID      = Animator.StringToHash("ActionID");
         private static readonly int Hash_ActionTrigger = Animator.StringToHash("Action Trigger");
@@ -26,6 +28,9 @@ namespace ___WorkData.Scripts.Player
         [SerializeField] private Transform groundCheck;
         [SerializeField] private float groundCheckRadius = 0.12f;
         [SerializeField] private LayerMask groundLayer;
+
+        [Header("One-Way Drop Through")]
+        [SerializeField] private float dropThroughTime = 0.25f;
 
         [Header("Dash / Roll")]
         [SerializeField] private float dashSpeed = 14f;
@@ -52,6 +57,7 @@ namespace ___WorkData.Scripts.Player
         private Rigidbody2D _rb;
         private Animator _anim;
         private SpriteRenderer _sr;
+        private Collider2D _playerCol;
 
         private bool _lookingToTheRight = true;
         private bool _isDead = false;
@@ -61,6 +67,8 @@ namespace ___WorkData.Scripts.Player
         private bool _isDashing = false;
         private float _lastDashTime = -999f;
 
+        private Coroutine _dropRoutine;
+
         private void Awake()
         {
             _inputActions = new InputSystem_Actions();
@@ -68,14 +76,12 @@ namespace ___WorkData.Scripts.Player
             _moveAction   = _inputActions.Player.Move;
             _jumpAction   = _inputActions.Player.Jump;
             _attackAction = _inputActions.Player.Attack;
-
-            // Если Dash action не создан в Input Actions — будет ошибка компиляции.
-            // Если у тебя Dash точно есть — оставляй как есть:
             _dashAction   = _inputActions.Player.Dash;
 
             _rb = GetComponent<Rigidbody2D>();
             _anim = GetComponent<Animator>();
             _sr = GetComponent<SpriteRenderer>();
+            _playerCol = GetComponent<Collider2D>();
 
             HP = maxHealth;
         }
@@ -121,6 +127,7 @@ namespace ___WorkData.Scripts.Player
                 _rb.linearVelocity = new Vector2(_moveInput.x * walkingSpeed, _rb.linearVelocity.y);
             }
 
+            // Animator
             _anim.SetFloat(Hash_Movement, Mathf.Abs(_rb.linearVelocity.x));
             _anim.SetBool(Hash_OnGround, grounded);
 
@@ -145,10 +152,12 @@ namespace ___WorkData.Scripts.Player
             if (!ctx.performed) return;
             if (_isDashing) return;
 
-            if (!IsGrounded())
+            if (!IsGrounded()) return;
+
+            // Провал вниз через one-way платформу: вниз + прыжок
+            if (_moveInput.y < -0.5f)
             {
-                // Диагностика: если прыжок не работает, это покажет причину
-                // Debug.Log("Jump blocked: not grounded");
+                TryDropThrough();
                 return;
             }
 
@@ -160,9 +169,6 @@ namespace ___WorkData.Scripts.Player
             if (_isDead) return;
             if (!ctx.performed) return;
             if (_isDashing) return;
-
-            // Если хочешь ролл только по земле — раскомментируй:
-            // if (!IsGrounded()) return;
 
             if (Time.time < _lastDashTime + dashCooldown) return;
 
@@ -183,7 +189,7 @@ namespace ___WorkData.Scripts.Player
             float t = 0f;
             while (t < dashDuration)
             {
-                // ВАЖНО: НЕ обнуляем Y, чтобы не ломать падение/прыжок
+                // Не обнуляем Y, чтобы не ломать падение/прыжок
                 _rb.linearVelocity = new Vector2(dir * dashSpeed, _rb.linearVelocity.y);
                 t += Time.fixedDeltaTime;
                 yield return new WaitForFixedUpdate();
@@ -203,10 +209,7 @@ namespace ___WorkData.Scripts.Player
             if (_isDead) return;
 
             float holdTime = Time.time - _attackPressTime;
-
-            // Ты говорила, что у тебя 3 атаки: 10 / 11 / 12.
-            // Сейчас реализовано 10/11. 12 добавим отдельно (например по комбо/другой кнопке).
-            int actionId = (holdTime >= heavyAttackHoldTime) ? 11 : 10;
+            int actionId = (holdTime >= heavyAttackHoldTime) ? 11 : 10; // 12 добавим позже
 
             _anim.SetInteger(Hash_ActionID, actionId);
             _anim.SetTrigger(Hash_ActionTrigger);
@@ -220,19 +223,35 @@ namespace ___WorkData.Scripts.Player
 
         private bool IsGrounded()
         {
-            if (groundCheck == null)
-            {
-                Debug.LogWarning("GroundCheck is NOT assigned on PlayerController.");
-                return false;
-            }
-
-            if (groundLayer.value == 0)
-            {
-                Debug.LogWarning("groundLayer Mask is NOTHING (0). Set Ground layer in Inspector.");
-                // не return, потому что формально можно оставить, но будет всегда false
-            }
-
+            if (groundCheck == null) return false;
             return Physics2D.OverlapCircle(groundCheck.position, groundCheckRadius, groundLayer);
+        }
+
+        // ---------- Drop Through One-Way ----------
+        private void TryDropThrough()
+        {
+            if (groundCheck == null || _playerCol == null) return;
+
+            // Находим коллайдер под ногами (это будет коллайдер Tilemap/платформы)
+            Collider2D platformCol = Physics2D.OverlapCircle(groundCheck.position, groundCheckRadius, groundLayer);
+            if (platformCol == null) return;
+
+            // Проваливаемся только через объекты, у которых есть PlatformEffector2D
+            // (на Tilemap он обычно стоит на GameObject Tilemap-а)
+            var effector = platformCol.GetComponent<PlatformEffector2D>();
+            if (effector == null) effector = platformCol.GetComponentInParent<PlatformEffector2D>();
+            if (effector == null) return;
+
+            if (_dropRoutine != null) StopCoroutine(_dropRoutine);
+            _dropRoutine = StartCoroutine(DropThroughCoroutine(platformCol));
+        }
+
+        private IEnumerator DropThroughCoroutine(Collider2D platformCol)
+        {
+            Physics2D.IgnoreCollision(_playerCol, platformCol, true);
+            yield return new WaitForSeconds(dropThroughTime);
+            if (platformCol != null && _playerCol != null)
+                Physics2D.IgnoreCollision(_playerCol, platformCol, false);
         }
 
         private void UpdateFlip()
