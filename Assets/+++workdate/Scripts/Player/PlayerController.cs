@@ -1,6 +1,7 @@
 using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.SceneManagement;
+using System.Collections;
 
 namespace ___WorkData.Scripts.Player
 {
@@ -12,46 +13,53 @@ namespace ___WorkData.Scripts.Player
         private static readonly int Hash_Movement      = Animator.StringToHash("Movement");
         private static readonly int Hash_ActionID      = Animator.StringToHash("ActionID");
         private static readonly int Hash_ActionTrigger = Animator.StringToHash("Action Trigger");
-
-        private static readonly int Hash_IsJumping = Animator.StringToHash("isJumping");
-        private static readonly int Hash_OnGround  = Animator.StringToHash("onGround");
-        private static readonly int Hash_Falling   = Animator.StringToHash("Falling");
-        private static readonly int Hash_IsDead    = Animator.StringToHash("IsDead");
+        private static readonly int Hash_OnGround      = Animator.StringToHash("onGround");
+        private static readonly int Hash_IsJumping     = Animator.StringToHash("isJumping");
+        private static readonly int Hash_Falling       = Animator.StringToHash("Falling");
+        private static readonly int Hash_IsDead        = Animator.StringToHash("isDead");
 
         [Header("Movement")]
         [SerializeField] private float walkingSpeed = 5f;
-        [SerializeField] private float jumpSpeed    = 15f;
+        [SerializeField] private float jumpSpeed = 15f;
+
+        [Header("Ground Check")]
+        [SerializeField] private Transform groundCheck;
+        [SerializeField] private float groundCheckRadius = 0.12f;
+        [SerializeField] private LayerMask groundLayer;
+
+        [Header("Dash / Roll")]
+        [SerializeField] private float dashSpeed = 14f;
+        [SerializeField] private float dashDuration = 0.18f;
+        [SerializeField] private float dashCooldown = 0.5f;
 
         [Header("Health")]
         [SerializeField] private float maxHealth = 100f;
         public float HP { get; private set; }
 
         [Header("Attack (input / тип атаки)")]
-        [SerializeField] private float heavyAttackHoldTime = 0.3f; 
-
-        [Header("Attack Hit (урон по врагам)")]
-        [SerializeField] private Transform attackPoint;  
-        [SerializeField] private float attackRadius = 0.5f;
-        [SerializeField] private int attackDamage = 10;
-        [SerializeField] private LayerMask enemyLayers;
+        [SerializeField] private float heavyAttackHoldTime = 0.3f;
 
         [Header("Respawn")]
         [SerializeField] private float respawnDelay = 2f;
-
-        [SerializeField] private Animator animator;
 
         private InputSystem_Actions _inputActions;
         private InputAction _moveAction;
         private InputAction _jumpAction;
         private InputAction _attackAction;
+        private InputAction _dashAction;
 
         private Vector2 _moveInput;
         private Rigidbody2D _rb;
-        private SpriteRenderer _spriteRenderer;
+        private Animator _anim;
+        private SpriteRenderer _sr;
+
         private bool _lookingToTheRight = true;
+        private bool _isDead = false;
 
         private float _attackPressTime;
-        private bool _isDead = false;
+
+        private bool _isDashing = false;
+        private float _lastDashTime = -999f;
 
         private void Awake()
         {
@@ -61,9 +69,13 @@ namespace ___WorkData.Scripts.Player
             _jumpAction   = _inputActions.Player.Jump;
             _attackAction = _inputActions.Player.Attack;
 
-            _rb             = GetComponent<Rigidbody2D>();
-            animator        = GetComponent<Animator>();
-            _spriteRenderer = GetComponent<SpriteRenderer>();
+            // Если Dash action не создан в Input Actions — будет ошибка компиляции.
+            // Если у тебя Dash точно есть — оставляй как есть:
+            _dashAction   = _inputActions.Player.Dash;
+
+            _rb = GetComponent<Rigidbody2D>();
+            _anim = GetComponent<Animator>();
+            _sr = GetComponent<SpriteRenderer>();
 
             HP = maxHealth;
         }
@@ -77,9 +89,10 @@ namespace ___WorkData.Scripts.Player
 
             _jumpAction.performed += OnJump;
 
-            _attackAction.started   += OnAttack;
-            _attackAction.performed += OnAttack;
-            _attackAction.canceled  += OnAttackCanceled;
+            _attackAction.started  += OnAttackStarted;
+            _attackAction.canceled += OnAttackCanceled;
+
+            _dashAction.performed += OnDash;
         }
 
         private void OnDisable()
@@ -89,32 +102,33 @@ namespace ___WorkData.Scripts.Player
 
             _jumpAction.performed -= OnJump;
 
-            _attackAction.started   -= OnAttack;
-            _attackAction.performed -= OnAttack;
-            _attackAction.canceled  -= OnAttackCanceled;
+            _attackAction.started  -= OnAttackStarted;
+            _attackAction.canceled -= OnAttackCanceled;
+
+            _dashAction.performed -= OnDash;
 
             _inputActions.Disable();
         }
 
         private void FixedUpdate()
         {
-            if (_isDead)
+            if (_isDead) return;
+
+            bool grounded = IsGrounded();
+
+            if (!_isDashing)
             {
-                _rb.linearVelocity = new Vector2(0f, _rb.linearVelocity.y);
-                return;
+                _rb.linearVelocity = new Vector2(_moveInput.x * walkingSpeed, _rb.linearVelocity.y);
             }
 
-            _rb.linearVelocity = new Vector2(_moveInput.x * walkingSpeed, _rb.linearVelocity.y);
+            _anim.SetFloat(Hash_Movement, Mathf.Abs(_rb.linearVelocity.x));
+            _anim.SetBool(Hash_OnGround, grounded);
 
-            animator.SetFloat(Hash_Movement, Mathf.Abs(_rb.linearVelocity.x));
+            bool isJumping = !grounded && _rb.linearVelocity.y > 0.01f;
+            bool isFalling = !grounded && _rb.linearVelocity.y < -0.01f;
 
-            bool isGrounded = Mathf.Abs(_rb.linearVelocity.y) < 0.01f;
-            bool isJumping  = !isGrounded && _rb.linearVelocity.y > 0.01f;
-            bool isFalling  = !isGrounded && _rb.linearVelocity.y < -0.01f;
-
-            animator.SetBool(Hash_OnGround, isGrounded);
-            animator.SetBool(Hash_IsJumping, isJumping);
-            animator.SetBool(Hash_Falling,  isFalling);
+            _anim.SetBool(Hash_IsJumping, isJumping);
+            _anim.SetBool(Hash_Falling, isFalling);
 
             UpdateFlip();
         }
@@ -129,87 +143,113 @@ namespace ___WorkData.Scripts.Player
         {
             if (_isDead) return;
             if (!ctx.performed) return;
+            if (_isDashing) return;
 
-            bool isGrounded = Mathf.Abs(_rb.linearVelocity.y) < 0.01f;
-            if (!isGrounded) return;
+            if (!IsGrounded())
+            {
+                // Диагностика: если прыжок не работает, это покажет причину
+                // Debug.Log("Jump blocked: not grounded");
+                return;
+            }
 
             _rb.linearVelocity = new Vector2(_rb.linearVelocity.x, jumpSpeed);
         }
 
-        
-
-        private void OnAttack(InputAction.CallbackContext ctx)
+        private void OnDash(InputAction.CallbackContext ctx)
         {
             if (_isDead) return;
+            if (!ctx.performed) return;
+            if (_isDashing) return;
 
-            if (ctx.started)
+            // Если хочешь ролл только по земле — раскомментируй:
+            // if (!IsGrounded()) return;
+
+            if (Time.time < _lastDashTime + dashCooldown) return;
+
+            StartCoroutine(DashCoroutine());
+        }
+
+        private IEnumerator DashCoroutine()
+        {
+            _isDashing = true;
+            _lastDashTime = Time.time;
+
+            float dir = _lookingToTheRight ? 1f : -1f;
+            if (Mathf.Abs(_moveInput.x) > 0.1f) dir = Mathf.Sign(_moveInput.x);
+
+            _anim.SetInteger(Hash_ActionID, 20);
+            _anim.SetTrigger(Hash_ActionTrigger);
+
+            float t = 0f;
+            while (t < dashDuration)
             {
-                _attackPressTime = Time.time;
+                // ВАЖНО: НЕ обнуляем Y, чтобы не ломать падение/прыжок
+                _rb.linearVelocity = new Vector2(dir * dashSpeed, _rb.linearVelocity.y);
+                t += Time.fixedDeltaTime;
+                yield return new WaitForFixedUpdate();
             }
+
+            _isDashing = false;
+        }
+
+        private void OnAttackStarted(InputAction.CallbackContext ctx)
+        {
+            if (_isDead) return;
+            if (ctx.started) _attackPressTime = Time.time;
         }
 
         private void OnAttackCanceled(InputAction.CallbackContext ctx)
         {
             if (_isDead) return;
-            if (!ctx.canceled) return;
 
             float holdTime = Time.time - _attackPressTime;
-            float actionId = holdTime >= heavyAttackHoldTime ? 11f : 10f;
 
-            animator.SetFloat(Hash_ActionID, actionId);
-            animator.SetTrigger(Hash_ActionTrigger);
-            
+            // Ты говорила, что у тебя 3 атаки: 10 / 11 / 12.
+            // Сейчас реализовано 10/11. 12 добавим отдельно (например по комбо/другой кнопке).
+            int actionId = (holdTime >= heavyAttackHoldTime) ? 11 : 10;
+
+            _anim.SetInteger(Hash_ActionID, actionId);
+            _anim.SetTrigger(Hash_ActionTrigger);
         }
 
-      
-
-        
-        /// Вызывается из анимации атаки игрока (Animation Event в нужном кадре).
-      
         public void OnAttackHit()
         {
             if (_isDead) return;
+            Debug.Log("AttackHit (no damage yet)");
+        }
 
-            if (attackPoint == null)
+        private bool IsGrounded()
+        {
+            if (groundCheck == null)
             {
-                Debug.LogWarning($"[{name}] AttackPoint не назначен у PlayerController!", this);
-                return;
+                Debug.LogWarning("GroundCheck is NOT assigned on PlayerController.");
+                return false;
             }
 
-            Collider2D[] hits = Physics2D.OverlapCircleAll(attackPoint.position, attackRadius, enemyLayers);
-
-            for (int i = 0; i < hits.Length; i++)
+            if (groundLayer.value == 0)
             {
-                Enemy enemy = hits[i].GetComponent<Enemy>();
-                if (enemy != null)
-                {
-                    enemy.TakeDamage(attackDamage);
-                }
+                Debug.LogWarning("groundLayer Mask is NOTHING (0). Set Ground layer in Inspector.");
+                // не return, потому что формально можно оставить, но будет всегда false
             }
+
+            return Physics2D.OverlapCircle(groundCheck.position, groundCheckRadius, groundLayer);
         }
 
         private void UpdateFlip()
         {
-            if (_moveInput.x > 0.01f)
-                _lookingToTheRight = true;
-            else if (_moveInput.x < -0.01f)
-                _lookingToTheRight = false;
+            if (_moveInput.x > 0.01f) _lookingToTheRight = true;
+            else if (_moveInput.x < -0.01f) _lookingToTheRight = false;
 
-            _spriteRenderer.flipX = !_lookingToTheRight;
+            _sr.flipX = !_lookingToTheRight;
         }
 
         private void OnDrawGizmosSelected()
         {
-            if (attackPoint == null) return;
-            Gizmos.color = Color.red;
-            Gizmos.DrawWireSphere(attackPoint.position, attackRadius);
-        }
-
-        // --------- ЗДОРОВЬЕ ---------
-
-        public float GetMaxHealth()
-        {
-            return maxHealth;
+            if (groundCheck != null)
+            {
+                Gizmos.color = Color.green;
+                Gizmos.DrawWireSphere(groundCheck.position, groundCheckRadius);
+            }
         }
 
         public void TakeDamage(float damage)
@@ -219,22 +259,8 @@ namespace ___WorkData.Scripts.Player
             HP -= damage;
             HP = Mathf.Clamp(HP, 0f, maxHealth);
 
-            if (HP <= 0f)
-            {
-                Die();
-            }
+            if (HP <= 0f) Die();
         }
-        
-        public void Heal(float amount)
-        {
-            if (_isDead) return;
-
-            HP += amount;
-            HP = Mathf.Clamp(HP, 0f, maxHealth);
-        }
-
-
-        // --------- СМЕРТЬ И РЕСПАУН ---------
 
         private void Die()
         {
@@ -244,16 +270,14 @@ namespace ___WorkData.Scripts.Player
             _inputActions.Disable();
             _rb.linearVelocity = Vector2.zero;
 
-            animator.SetBool(Hash_IsDead, true);
+            _anim.SetBool(Hash_IsDead, true);
 
             StartCoroutine(RespawnCoroutine());
         }
 
-
-        private System.Collections.IEnumerator RespawnCoroutine()
+        private IEnumerator RespawnCoroutine()
         {
             yield return new WaitForSeconds(respawnDelay);
-
             var scene = SceneManager.GetActiveScene();
             SceneManager.LoadScene(scene.buildIndex);
         }
