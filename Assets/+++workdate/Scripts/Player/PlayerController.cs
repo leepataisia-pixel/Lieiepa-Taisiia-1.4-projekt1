@@ -13,8 +13,6 @@ namespace ___WorkData.Scripts.Player
     {
         // Animator параметр-имена (должны совпадать 1:1 с Animator)
         private static readonly int Hash_Movement      = Animator.StringToHash("Movement");
-        private static readonly int Hash_ActionID      = Animator.StringToHash("ActionID");
-        private static readonly int Hash_ActionTrigger = Animator.StringToHash("Action Trigger");
         private static readonly int Hash_OnGround      = Animator.StringToHash("onGround");
         private static readonly int Hash_IsJumping     = Animator.StringToHash("isJumping");
         private static readonly int Hash_Falling       = Animator.StringToHash("Falling");
@@ -41,16 +39,12 @@ namespace ___WorkData.Scripts.Player
         [SerializeField] private float maxHealth = 100f;
         public float HP { get; private set; }
 
-        [Header("Attack (input / тип атаки)")]
-        [SerializeField] private float heavyAttackHoldTime = 0.3f;
-
         [Header("Respawn")]
         [SerializeField] private float respawnDelay = 2f;
 
         private InputSystem_Actions _inputActions;
         private InputAction _moveAction;
         private InputAction _jumpAction;
-        private InputAction _attackAction;
         private InputAction _dashAction;
 
         private Vector2 _moveInput;
@@ -62,8 +56,6 @@ namespace ___WorkData.Scripts.Player
         private bool _lookingToTheRight = true;
         private bool _isDead = false;
 
-        private float _attackPressTime;
-
         private bool _isDashing = false;
         private float _lastDashTime = -999f;
 
@@ -73,10 +65,9 @@ namespace ___WorkData.Scripts.Player
         {
             _inputActions = new InputSystem_Actions();
 
-            _moveAction   = _inputActions.Player.Move;
-            _jumpAction   = _inputActions.Player.Jump;
-            _attackAction = _inputActions.Player.Attack;
-            _dashAction   = _inputActions.Player.Dash;
+            _moveAction = _inputActions.Player.Move;
+            _jumpAction = _inputActions.Player.Jump;
+            _dashAction = _inputActions.Player.Dash;
 
             _rb = GetComponent<Rigidbody2D>();
             _anim = GetComponent<Animator>();
@@ -94,10 +85,6 @@ namespace ___WorkData.Scripts.Player
             _moveAction.canceled  += Move;
 
             _jumpAction.performed += OnJump;
-
-            _attackAction.started  += OnAttackStarted;
-            _attackAction.canceled += OnAttackCanceled;
-
             _dashAction.performed += OnDash;
         }
 
@@ -107,10 +94,6 @@ namespace ___WorkData.Scripts.Player
             _moveAction.canceled  -= Move;
 
             _jumpAction.performed -= OnJump;
-
-            _attackAction.started  -= OnAttackStarted;
-            _attackAction.canceled -= OnAttackCanceled;
-
             _dashAction.performed -= OnDash;
 
             _inputActions.Disable();
@@ -183,42 +166,17 @@ namespace ___WorkData.Scripts.Player
             float dir = _lookingToTheRight ? 1f : -1f;
             if (Mathf.Abs(_moveInput.x) > 0.1f) dir = Mathf.Sign(_moveInput.x);
 
-            _anim.SetInteger(Hash_ActionID, 20);
-            _anim.SetTrigger(Hash_ActionTrigger);
-
+            // Если у тебя Dash анимируется через Action Layer — это будет делать Combat/Animator,
+            // но сам дэш физикой оставляем здесь.
             float t = 0f;
             while (t < dashDuration)
             {
-                // Не обнуляем Y, чтобы не ломать падение/прыжок
                 _rb.linearVelocity = new Vector2(dir * dashSpeed, _rb.linearVelocity.y);
                 t += Time.fixedDeltaTime;
                 yield return new WaitForFixedUpdate();
             }
 
             _isDashing = false;
-        }
-
-        private void OnAttackStarted(InputAction.CallbackContext ctx)
-        {
-            if (_isDead) return;
-            if (ctx.started) _attackPressTime = Time.time;
-        }
-
-        private void OnAttackCanceled(InputAction.CallbackContext ctx)
-        {
-            if (_isDead) return;
-
-            float holdTime = Time.time - _attackPressTime;
-            int actionId = (holdTime >= heavyAttackHoldTime) ? 11 : 10; // 12 добавим позже
-
-            _anim.SetInteger(Hash_ActionID, actionId);
-            _anim.SetTrigger(Hash_ActionTrigger);
-        }
-
-        public void OnAttackHit()
-        {
-            if (_isDead) return;
-            Debug.Log("AttackHit (no damage yet)");
         }
 
         private bool IsGrounded()
@@ -232,12 +190,9 @@ namespace ___WorkData.Scripts.Player
         {
             if (groundCheck == null || _playerCol == null) return;
 
-            // Находим коллайдер под ногами (это будет коллайдер Tilemap/платформы)
             Collider2D platformCol = Physics2D.OverlapCircle(groundCheck.position, groundCheckRadius, groundLayer);
             if (platformCol == null) return;
 
-            // Проваливаемся только через объекты, у которых есть PlatformEffector2D
-            // (на Tilemap он обычно стоит на GameObject Tilemap-а)
             var effector = platformCol.GetComponent<PlatformEffector2D>();
             if (effector == null) effector = platformCol.GetComponentInParent<PlatformEffector2D>();
             if (effector == null) return;
@@ -271,6 +226,8 @@ namespace ___WorkData.Scripts.Player
             }
         }
 
+        // Временно оставляем урон/смерть здесь.
+        // Когда начнём GameOver Menu — вынесем это в Health + GameOverManager.
         public void TakeDamage(float damage)
         {
             if (_isDead) return;
