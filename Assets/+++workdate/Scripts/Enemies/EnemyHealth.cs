@@ -1,60 +1,34 @@
 using UnityEngine;
+using System;
 
-public class enemyHealth : MonoBehaviour
+public class EnemyHealth : MonoBehaviour
 {
-    [Header("Health")]
-    public float maxHealth = 50f;
-    public float health = 50f;
+    [Header("HP")]
+    public float maxHealth = 30f;
+    public float health = 30f;
 
+    [Header("Death")]
     public bool isDead = false;
 
-    private Animator animator;
-    private Rigidbody2D rb;
-    private Collider2D[] colliders;
+    public event Action<float, float> OnHealthChanged; // (hp, maxHp)
 
     private void Awake()
     {
+        maxHealth = Mathf.Max(1f, maxHealth);
         health = Mathf.Clamp(health, 0f, maxHealth);
 
-        animator = GetComponent<Animator>();
-        rb = GetComponent<Rigidbody2D>();
-        colliders = GetComponentsInChildren<Collider2D>();
+        // чтобы UI сразу обновился
+        OnHealthChanged?.Invoke(health, maxHealth);
     }
 
-    public void TakeDamage(float damage)
+    public void TakeDamage(float amount)
     {
         if (isDead) return;
 
-        health -= damage;
-        health = Mathf.Clamp(health, 0f, maxHealth);
+        health = Mathf.Clamp(health - amount, 0f, maxHealth);
+        OnHealthChanged?.Invoke(health, maxHealth);
 
         if (health <= 0f)
-        {
-            Die();
-        }
-        else
-        {
-            if (animator != null)
-                animator.SetTrigger("Hit");
-        }
-    }
-
-    private void Die()
-    {
-        isDead = true;
-
-        if (animator != null)
-            animator.SetBool("isDead", true);
-
-        if (rb != null)
-        {
-            rb.linearVelocity = Vector2.zero;
-            rb.simulated = false;
-        }
-
-        foreach (var col in colliders)
-            col.enabled = false;
-
-        Destroy(gameObject, 1.2f);
+            isDead = true;
     }
 }
