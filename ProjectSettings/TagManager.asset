@@ -48,5 +48,8 @@ TagManager:
   - name: Background
     uniqueID: 83706667
     locked: 0
+  - name: things
+    uniqueID: 2840104775
+    locked: 0
   m_RenderingLayers:
   - Default
