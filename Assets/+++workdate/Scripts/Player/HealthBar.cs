@@ -1,6 +1,6 @@
 using UnityEngine;
 using UnityEngine.UI;
-using ___WorkData.Scripts.Player; // чтобы видеть PlayerController / PlayerAttack из твоего namespace
+using ___WorkData.Scripts.Player; // PlayerController / PlayerAttack из твоего namespace
 
 public class playerHealth : MonoBehaviour
 {
@@ -16,8 +16,7 @@ public class playerHealth : MonoBehaviour
 
     [Header("Revive")]
     [Tooltip("Сколько HP дать при Resume после смерти (процент от maxHealth). Например 0.35 = 35%")]
-    [Range(0.05f, 1f)]
-    public float revivePercent = 0.35f;
+    [Range(0.05f, 1f)] public float revivePercent = 0.35f;
 
     [Tooltip("Короткая неуязвимость после revive (сек). Можно 0.")]
     public float reviveInvulnTime = 0.5f;
@@ -35,6 +34,7 @@ public class playerHealth : MonoBehaviour
 
     private void Start()
     {
+        // Защита от неправильных значений
         maxHealth = Mathf.Max(1f, maxHealth);
         health = Mathf.Clamp(health, 0f, maxHealth);
 
@@ -45,7 +45,7 @@ public class playerHealth : MonoBehaviour
         playerController = GetComponent<PlayerController>();
         playerAttack = GetComponent<PlayerAttack>();
 
-        // найдём меню смерти на сцене (можно и вручную назначать, но так проще)
+        // найдём меню смерти на сцене
         deathMenuUI = FindObjectOfType<DeathMenuUI>();
 
         UpdateBar();
@@ -55,7 +55,7 @@ public class playerHealth : MonoBehaviour
     {
         if (isDead) return;
 
-        // небольшая защита после revive
+        // Небольшая защита после revive
         if (Time.time < _invulnUntilTime) return;
 
         health = Mathf.Clamp(health - amount, 0f, maxHealth);
@@ -67,6 +67,7 @@ public class playerHealth : MonoBehaviour
         }
         else
         {
+            // Опционально: триггер анимации получения урона
             if (animator != null)
                 animator.SetTrigger("Hit");
         }
@@ -77,25 +78,29 @@ public class playerHealth : MonoBehaviour
         if (isDead) return;
         isDead = true;
 
+        // Анимация смерти
         if (animator != null)
             animator.SetBool("isDead", true);
 
-        // стоп физики
+        // Остановить физику
         if (rb != null)
         {
-            rb.linearVelocity = Vector2.zero;
-            rb.simulated = false;
+            rb.linearVelocity = Vector2.zero;     // ✅ вместо linearVelocity
+            rb.simulated = false;           // отключаем симуляцию, чтобы не падал/не двигался
         }
 
-        // выкл коллайдеров
-        foreach (var col in colliders)
-            col.enabled = false;
+        // Отключить коллайдеры
+        if (colliders != null)
+        {
+            foreach (var col in colliders)
+                if (col != null) col.enabled = false;
+        }
 
-        // выкл управление
+        // Отключить управление/атаку
         if (playerController != null) playerController.enabled = false;
         if (playerAttack != null) playerAttack.enabled = false;
 
-        // показать меню смерти (оно поставит Time.timeScale=0)
+        // Показать меню смерти
         if (deathMenuUI != null) deathMenuUI.ShowDeathMenu(this);
         else Debug.LogError("playerHealth: DeathMenuUI не найден на сцене!");
     }
@@ -103,30 +108,33 @@ public class playerHealth : MonoBehaviour
     // Вызывается из DeathMenuUI.Resume()
     public void Revive()
     {
-        // вернуть HP НЕ полный
+        // Вернуть HP НЕ полный
         health = Mathf.Clamp(maxHealth * revivePercent, 1f, maxHealth);
         UpdateBar();
 
         isDead = false;
 
-        // сброс анимации смерти
+        // Сброс анимации смерти
         if (animator != null)
             animator.SetBool("isDead", false);
 
-        // вернуть физику
+        // Вернуть физику
         if (rb != null)
             rb.simulated = true;
 
-        // включить коллайдеры
-        foreach (var col in colliders)
-            col.enabled = true;
+        // Включить коллайдеры обратно
+        if (colliders != null)
+        {
+            foreach (var col in colliders)
+                if (col != null) col.enabled = true;
+        }
 
-        // вернуть управление
+        // Вернуть управление/атаку
         if (playerController != null) playerController.enabled = true;
         if (playerAttack != null) playerAttack.enabled = true;
 
-        // короткая защита
-        _invulnUntilTime = Time.unscaledTime + reviveInvulnTime;
+        // Короткая неуязвимость
+        _invulnUntilTime = Time.time + reviveInvulnTime;
     }
 
     private void UpdateBar()

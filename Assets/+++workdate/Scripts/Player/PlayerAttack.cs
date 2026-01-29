@@ -28,8 +28,7 @@ namespace ___WorkData.Scripts.Player
         [SerializeField] private float damage12 = 35f;
 
         [Header("Debug")]
-        [SerializeField] private bool debugLogs = true;
-        [SerializeField] private bool enableForcePlayTest = true;
+        [SerializeField] private bool enableForcePlayTest = false; // лучше выключить
         [SerializeField] private int actionLayerIndex = 0;
         [SerializeField] private string attack10StateName = "Attack10";
 
@@ -72,23 +71,16 @@ namespace ___WorkData.Scripts.Player
         private void Update()
         {
             if (enableForcePlayTest && Keyboard.current != null && Keyboard.current.kKey.wasPressedThisFrame)
-            {
                 _anim.Play(attack10StateName, actionLayerIndex, 0f);
-            }
 
             if (!useInputActions)
             {
                 if (Mouse.current != null && Mouse.current.rightButton.wasPressedThisFrame)
-                {
                     TriggerAttack();
-                }
             }
         }
 
-        private void OnAttack(InputAction.CallbackContext ctx)
-        {
-            TriggerAttack();
-        }
+        private void OnAttack(InputAction.CallbackContext ctx) => TriggerAttack();
 
         private void TriggerAttack()
         {
@@ -115,7 +107,7 @@ namespace ___WorkData.Scripts.Player
             return 10;
         }
 
-        // Animation Event
+        // Animation Event (вызывается из клипа атаки)
         public void OnAttackHit()
         {
             if (hitPoint == null) return;
@@ -127,9 +119,9 @@ namespace ___WorkData.Scripts.Player
 
             foreach (var h in hits)
             {
-                EnemyHealth enemy = h.GetComponent<EnemyHealth>();
-                if (enemy == null)
-                    enemy = h.GetComponentInParent<EnemyHealth>();
+                // ✅ чаще EnemyHealth висит на root, а коллайдер на child
+                EnemyHealth enemy = h.GetComponentInParent<EnemyHealth>();
+                if (enemy == null) enemy = h.GetComponent<EnemyHealth>();
 
                 if (enemy != null && !enemy.isDead)
                     enemy.TakeDamage(dmg);

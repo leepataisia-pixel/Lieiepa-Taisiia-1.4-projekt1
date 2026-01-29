@@ -1,59 +1,76 @@
 using UnityEngine;
-using ___WorkData.Scripts.Player;
 
 [RequireComponent(typeof(Rigidbody2D))]
 [RequireComponent(typeof(Animator))]
 public class EnemyAI : MonoBehaviour
 {
     [Header("References")]
-    [SerializeField] private EnemyHealth enemyHealth;      // можно оставить пустым
-    [SerializeField] private SpriteRenderer sprite;        // можно оставить пустым (найдём сами)
-    [SerializeField] private Transform headPoint;          // опционально (для UI, не обязательно)
+    [SerializeField] private EnemyHealth enemyHealth;     // EnemyHealth на root (желательно)
+    [SerializeField] private Transform headPoint;         // опционально для UI
+
+    [Header("Target (Player)")]
+    [SerializeField] private string playerTag = "Player"; // игрок должен иметь Tag "Player"
+    [Tooltip("Если layer настроен неправильно, враг всё равно попробует найти playerHealth по компоненту.")]
+    [SerializeField] private LayerMask playerLayer;       // поставь Player layer, но если забудешь — всё равно будет работать
+
+    [Header("Patrol Area")]
+    [Tooltip("Патруль в радиусе от стартовой позиции.")]
+    [SerializeField] private float patrolRadiusFromStart = 3.5f;
 
     [Header("Movement")]
-    [SerializeField] private float patrolSpeed = 2f;
-    [SerializeField] private float chaseSpeed = 2.6f;
+    [SerializeField] private float patrolSpeed = 2.0f;
+    [SerializeField] private float chaseSpeed = 2.8f;
     [SerializeField] private bool startMovingRight = true;
 
-    [Header("Slope-safe Checks")]
-    [SerializeField] private Transform groundCheck;
-    [SerializeField] private Transform wallCheck;
-    [SerializeField] private LayerMask groundLayer;
+    [Header("Edge / Wall Checks (поставь пустые точки впереди)")]
+    [SerializeField] private Transform groundCheck;       // впереди у ног (чуть вперед + вниз)
+    [SerializeField] private Transform wallCheck;         // впереди у корпуса
+    [SerializeField] private LayerMask groundLayer;       // слой земли/платформ
     [SerializeField] private float groundDistance = 0.25f;
     [SerializeField] private float wallDistance = 0.15f;
 
-    [Header("AI")]
-    [SerializeField] private float detectionRange = 4f;
-    [SerializeField] private float loseRange = 6f;
-    [SerializeField] private float attackRange = 1.2f;
+    [Header("AI Distances")]
+    [SerializeField] private float detectionRange = 4.0f; // начать преследование
+    [SerializeField] private float loseRange = 6.0f;      // перестать преследовать
+    [SerializeField] private float attackRange = 1.2f;    // дистанция для старта атаки
 
-    [Header("Attack")]
-    [SerializeField] private Transform attackPoint;
+    [Header("Attack Hitbox")]
+    [SerializeField] private Transform attackPoint;       // точка удара (впереди)
     [SerializeField] private float attackRadius = 0.6f;
-    [SerializeField] private int attackDamage = 10;
-    [SerializeField] private LayerMask playerLayer;
-    [SerializeField] private float attackCooldown = 1f;
+    [SerializeField] private float attackDamage = 10f;
+
+    [Header("Attack Timing")]
+    [Tooltip("Кулдаун между атаками (сек).")]
+    [SerializeField] private float attackCooldown = 1.0f;
+    [Tooltip("Через сколько секунд после старта атаки нанести урон (подгони под анимацию).")]
+    [SerializeField] private float hitDelay = 0.12f;
+    [Tooltip("Сколько длится 'лок' атаки (враг стоит на месте)")]
+    [SerializeField] private float attackLockTime = 0.35f;
 
     [Header("Animator")]
     [SerializeField] private string runBoolName = "Run";
-    [Tooltip("Точное имя STATE атаки в Animator. У тебя: EnemyAttack")]
+    [Tooltip("Если у тебя есть state атаки с именем EnemyAttack — он проиграется.")]
     [SerializeField] private string attackStateName = "EnemyAttack";
-    [Tooltip("На каком слое Animator находится EnemyAttack (обычно 0)")]
     [SerializeField] private int attackLayerIndex = 0;
-    [SerializeField] private string dieStateName = "Die"; // если у тебя state смерти иначе — поменяй
-
-    [Header("Flip")]
-    [Tooltip("Если спрайт по умолчанию смотрит ВЛЕВО — включи.")]
-    [SerializeField] private bool spriteDefaultFacesLeft = true;
+    [Tooltip("Если state не найден — используем Trigger.")]
+    [SerializeField] private string attackTriggerName = "Attack";
+    [SerializeField] private string deadBoolName = "isDead";
 
     private Rigidbody2D _rb;
     private Animator _anim;
     private Transform _player;
 
+    private Vector2 _startPos;
     private float _dirX;
     private bool _playerDetected;
-    private float _attackTimer;
-    private bool _attacking; // чтобы не спамить атаками
+
+    private float _nextAttackTime;
+    private bool _attacking;
+
+    private int _attackStateHash;
+    private int _attackTriggerHash;
+    private int _runBoolHash;
+    private int _deadBoolHash;
 
     private void Awake()
     {
@@ -61,32 +78,49 @@ public class EnemyAI : MonoBehaviour
         _anim = GetComponent<Animator>();
 
         if (enemyHealth == null) enemyHealth = GetComponent<EnemyHealth>();
-        if (sprite == null) sprite = GetComponentInChildren<SpriteRenderer>();
+
+        _startPos = transform.position;
 
         _dirX = startMovingRight ? 1f : -1f;
         ApplyFacing(_dirX);
 
-        GameObject p = GameObject.FindGameObjectWithTag("Player");
+        _attackStateHash = Animator.StringToHash(attackStateName);
+        _attackTriggerHash = Animator.StringToHash(attackTriggerName);
+        _runBoolHash = Animator.StringToHash(runBoolName);
+        _deadBoolHash = Animator.StringToHash(deadBoolName);
+
+        // Ищем игрока по тегу
+        var p = GameObject.FindGameObjectWithTag(playerTag);
         if (p != null) _player = p.transform;
     }
 
     private void Update()
     {
+        // Если враг мёртв — стоп
         if (enemyHealth != null && enemyHealth.isDead)
         {
-            DieAndStop();
+            StopAllMotion();
+            TrySetDeadAnim();
+            enabled = false;
             return;
         }
 
-        if (_attackTimer > 0f) _attackTimer -= Time.deltaTime;
-
-        // Run animation
-        _anim.SetBool(runBoolName, Mathf.Abs(_rb.linearVelocity.x) > 0.01f);
+        // Run анимация
+        if (!string.IsNullOrEmpty(runBoolName))
+            _anim.SetBool(_runBoolHash, Mathf.Abs(_rb.linearVelocity.x) > 0.05f);
     }
 
     private void FixedUpdate()
     {
         if (enemyHealth != null && enemyHealth.isDead) return;
+        if (_attacking) return;
+
+        // Если игрок не найден (например, появился позже) — попробуем найти снова
+        if (_player == null)
+        {
+            var p = GameObject.FindGameObjectWithTag(playerTag);
+            if (p != null) _player = p.transform;
+        }
 
         if (_player != null)
         {
@@ -100,65 +134,119 @@ public class EnemyAI : MonoBehaviour
                 float desiredDir = (_player.position.x >= transform.position.x) ? 1f : -1f;
                 ApplyFacing(desiredDir);
 
-                // ATTACK
-                if (!_attacking && dist <= attackRange && _attackTimer <= 0f)
+                // АТАКА
+                if (dist <= attackRange && Time.time >= _nextAttackTime)
                 {
-                    _attacking = true;
-                    _rb.linearVelocity = new Vector2(0f, _rb.linearVelocity.y);
-
-                    PlayStateSafe(attackStateName, attackLayerIndex);
-
-                    DealDamageToPlayer();      // наносим урон надёжно (без Animation Event)
-
-                    _attackTimer = attackCooldown;
-
-                    // отпускаем атаку чуть позже, чтобы не зациклилось каждый FixedUpdate
-                    Invoke(nameof(UnlockAttack), 0.25f);
+                    StartCoroutine(AttackRoutine());
                     return;
                 }
 
-                // CHASE (но не падать/не в стену)
+                // ПОГОНЯ (безопасно)
                 if (WouldFallOrHitWall(desiredDir))
-                    _rb.linearVelocity = new Vector2(0f, _rb.linearVelocity.y);
+                    SetVelocityX(0f);
                 else
-                    _rb.linearVelocity = new Vector2(desiredDir * chaseSpeed, _rb.linearVelocity.y);
+                    SetVelocityX(desiredDir * chaseSpeed);
 
                 return;
             }
         }
 
-        // PATROL
-        Patrol();
+        // ПАТРУЛЬ (если игрока нет/не видим)
+        PatrolInArea();
     }
 
-    private void UnlockAttack()
+    private System.Collections.IEnumerator AttackRoutine()
     {
+        _attacking = true;
+        _nextAttackTime = Time.time + attackCooldown;
+
+        // стоп по X
+        SetVelocityX(0f);
+
+        // проиграть анимацию атаки
+        PlayAttackAnimation();
+
+        // ждать момент удара
+        yield return new WaitForSeconds(hitDelay);
+
+        // нанести урон
+        DealDamageToPlayerGuaranteed();
+
+        // держим лок (чтобы не бегал во время атаки)
+        yield return new WaitForSeconds(Mathf.Max(0f, attackLockTime - hitDelay));
+
         _attacking = false;
     }
 
-    private void Patrol()
+    // ---- Урон: гарантированный (даже если layer неверный) ----
+    private void DealDamageToPlayerGuaranteed()
     {
-        if (WouldFallOrHitWall(_dirX))
+        if (attackPoint == null) return;
+
+        // 1) Попытка по playerLayer (правильный путь)
+        Collider2D[] hits = Physics2D.OverlapCircleAll(attackPoint.position, attackRadius, playerLayer);
+
+        // 2) Если пусто — значит layer настроен криво. Берём все коллайдеры и фильтруем по playerHealth/Tag.
+        if (hits == null || hits.Length == 0)
         {
-            _dirX *= -1f;
-            ApplyFacing(_dirX);
+            hits = Physics2D.OverlapCircleAll(attackPoint.position, attackRadius);
         }
 
-        _rb.linearVelocity = new Vector2(_dirX * patrolSpeed, _rb.linearVelocity.y);
+        for (int i = 0; i < hits.Length; i++)
+        {
+            if (hits[i] == null) continue;
+
+            // пробуем найти твой скрипт здоровья игрока (самое главное!)
+            playerHealth ph = hits[i].GetComponent<playerHealth>();
+            if (ph == null) ph = hits[i].GetComponentInParent<playerHealth>();
+
+            if (ph != null)
+            {
+                if (!ph.isDead)
+                    ph.TakeDamage(attackDamage);
+                return; // один удар
+            }
+
+            // запасной вариант: если вдруг у тебя игрок по Tag
+            if (hits[i].CompareTag(playerTag))
+            {
+                // если нет playerHealth, значит HP у тебя в другом месте
+                // но хотя бы логика сработала
+                return;
+            }
+        }
     }
 
+    // ---- Патруль в радиусе ----
+    private void PatrolInArea()
+    {
+        float leftBorder = _startPos.x - patrolRadiusFromStart;
+        float rightBorder = _startPos.x + patrolRadiusFromStart;
+
+        if (transform.position.x <= leftBorder) _dirX = 1f;
+        if (transform.position.x >= rightBorder) _dirX = -1f;
+
+        if (WouldFallOrHitWall(_dirX))
+            _dirX *= -1f;
+
+        ApplyFacing(_dirX);
+        SetVelocityX(_dirX * patrolSpeed);
+    }
+
+    // ---- Проверка края/стены ----
     private bool WouldFallOrHitWall(float dirX)
     {
-        bool noGround = true;
+        bool noGround = false;
         if (groundCheck != null)
         {
-            noGround = !Physics2D.CircleCast(
+            bool hasGroundAhead = Physics2D.CircleCast(
                 groundCheck.position,
                 0.15f,
                 Vector2.down,
                 groundDistance,
                 groundLayer
             );
+            noGround = !hasGroundAhead;
         }
 
         bool hitWall = false;
@@ -166,7 +254,7 @@ public class EnemyAI : MonoBehaviour
         {
             hitWall = Physics2D.BoxCast(
                 wallCheck.position,
-                new Vector2(0.1f, 0.6f),
+                new Vector2(0.12f, 0.65f),
                 0f,
                 new Vector2(Mathf.Sign(dirX), 0f),
                 wallDistance,
@@ -177,66 +265,48 @@ public class EnemyAI : MonoBehaviour
         return noGround || hitWall;
     }
 
-    private void DealDamageToPlayer()
+    // ---- Движение по X без ломания Y ----
+    private void SetVelocityX(float x)
     {
-        if (attackPoint == null) return;
-
-        Collider2D[] hits = Physics2D.OverlapCircleAll(attackPoint.position, attackRadius, playerLayer);
-        for (int i = 0; i < hits.Length; i++)
-        {
-            PlayerController pc = hits[i].GetComponent<PlayerController>();
-            if (pc != null)
-            {
-                pc.TakeDamage(attackDamage);
-                break; // один удар за атаку
-            }
-        }
+        Vector2 v = _rb.linearVelocity;
+        v.x = x;
+        _rb.linearVelocity = v;
     }
 
+    private void StopAllMotion()
+    {
+        if (_rb != null) _rb.linearVelocity = Vector2.zero;
+    }
+
+    // ---- ВАЖНО: Flip через scale root -> коллайдеры/точки тоже переворачиваются ----
     private void ApplyFacing(float dirX)
     {
-        if (sprite == null) return;
-
-        bool movingRight = dirX > 0f;
-
-        // flipX — только визуально (без scale), чтобы не глючили groundCheck/wallCheck
-        if (spriteDefaultFacesLeft)
-            sprite.flipX = movingRight;
-        else
-            sprite.flipX = !movingRight;
+        Vector3 s = transform.localScale;
+        s.x = Mathf.Abs(s.x) * (dirX >= 0f ? 1f : -1f);
+        transform.localScale = s;
     }
 
-    private void PlayStateSafe(string stateName, int layer)
+    private void PlayAttackAnimation()
     {
-        int hash = Animator.StringToHash(stateName);
-
-        if (!_anim.HasState(layer, hash))
+        // Если есть state с именем EnemyAttack — играем его
+        if (_anim.HasState(attackLayerIndex, _attackStateHash))
         {
-            Debug.LogError($"EnemyAI: State '{stateName}' NOT found on Animator layer {layer}. " +
-                           $"Check state name exactly and layer index.", this);
+            _anim.Play(_attackStateHash, attackLayerIndex, 0f);
             return;
         }
 
-        _anim.Play(hash, layer, 0f);
+        // Иначе пробуем trigger "Attack"
+        if (!string.IsNullOrEmpty(attackTriggerName))
+        {
+            _anim.ResetTrigger(_attackTriggerHash);
+            _anim.SetTrigger(_attackTriggerHash);
+        }
     }
 
-    private void DieAndStop()
+    private void TrySetDeadAnim()
     {
-        _rb.linearVelocity = Vector2.zero;
-
-        // если у тебя есть стейт смерти с именем dieStateName — можно проиграть
-        if (!string.IsNullOrEmpty(dieStateName))
-            PlayStateSafe(dieStateName, 0);
-
-        // можно уничтожать позже — по желанию
-        // Destroy(gameObject, 2f);
-        enabled = false; // стоп AI
-    }
-
-    // опционально: чтобы UI мог взять headPoint
-    public Transform GetHeadPoint()
-    {
-        return headPoint != null ? headPoint : transform;
+        if (!string.IsNullOrEmpty(deadBoolName))
+            _anim.SetBool(_deadBoolHash, true);
     }
 
     private void OnDrawGizmosSelected()
@@ -245,6 +315,18 @@ public class EnemyAI : MonoBehaviour
         {
             Gizmos.color = Color.red;
             Gizmos.DrawWireSphere(attackPoint.position, attackRadius);
+        }
+
+        if (groundCheck != null)
+        {
+            Gizmos.color = Color.green;
+            Gizmos.DrawWireSphere(groundCheck.position, 0.15f);
+        }
+
+        if (wallCheck != null)
+        {
+            Gizmos.color = Color.yellow;
+            Gizmos.DrawWireCube(wallCheck.position, new Vector3(0.12f, 0.65f, 0.01f));
         }
     }
 }

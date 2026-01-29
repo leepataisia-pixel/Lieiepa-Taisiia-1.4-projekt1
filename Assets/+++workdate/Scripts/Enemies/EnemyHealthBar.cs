@@ -1,60 +1,63 @@
 using UnityEngine;
 using UnityEngine.UI;
 
-public class EnemyHealthBarFollow : MonoBehaviour
+public class EnemyHealthBarUI : MonoBehaviour
 {
-    [Header("Links")]
-    public EnemyHealth enemyHealth;     // можно оставить пустым (найдём)
-    public Image fillImage;             // это Fill (Image Type = Filled)
+    [Header("UI")]
+    [SerializeField] private Image fillImage;
 
     [Header("Follow")]
-    public Transform target;            // HeadPoint (рекомендуется)
-    public Vector3 offset = new Vector3(0f, 0f, 0f);
+    [SerializeField] private Vector3 screenOffset = new Vector3(0f, 40f, 0f); // вверх
 
-    [Header("Smooth")]
-    public float smoothSpeed = 8f;
+    private Transform _target;       // враг (world)
+    private Camera _cam;
+    private EnemyHealth _health;
 
-    private float _currentFill = 1f;
-    private float _targetFill = 1f;
-
-    private void Awake()
+    public void Init(Transform target, EnemyHealth health, Camera cam)
     {
-        if (enemyHealth == null)
-            enemyHealth = GetComponentInParent<EnemyHealth>();
+        _target = target;
+        _health = health;
+        _cam = cam != null ? cam : Camera.main;
 
-        if (target == null)
-            target = transform.parent != null ? transform.parent : null;
-
-        if (fillImage != null)
+        if (_health != null)
         {
-            _currentFill = fillImage.fillAmount;
-            _targetFill = _currentFill;
+            _health.OnHealthChanged += OnHealthChanged;
+            // сразу обновить
+            OnHealthChanged(_health.health, _health.maxHealth);
         }
-
-        if (enemyHealth != null)
-            enemyHealth.OnHealthChanged += OnHpChanged;
     }
 
     private void OnDestroy()
     {
-        if (enemyHealth != null)
-            enemyHealth.OnHealthChanged -= OnHpChanged;
+        if (_health != null)
+            _health.OnHealthChanged -= OnHealthChanged;
     }
 
     private void LateUpdate()
     {
-        if (target != null)
-            transform.position = target.position + offset;
-
-        if (fillImage != null)
+        if (_target == null)
         {
-            _currentFill = Mathf.Lerp(_currentFill, _targetFill, Time.deltaTime * smoothSpeed);
-            fillImage.fillAmount = _currentFill;
+            Destroy(gameObject);
+            return;
         }
+
+        if (_cam == null) _cam = Camera.main;
+        if (_cam == null) return;
+
+        // перевод world -> screen
+        Vector3 screenPos = _cam.WorldToScreenPoint(_target.position);
+        transform.position = screenPos + screenOffset;
     }
 
-    private void OnHpChanged(float hp, float maxHp)
+    private void OnHealthChanged(float hp, float maxHp)
     {
-        _targetFill = (maxHp <= 0f) ? 0f : Mathf.Clamp01(hp / maxHp);
+        if (fillImage == null) return;
+
+        float t = (maxHp <= 0f) ? 0f : Mathf.Clamp01(hp / maxHp);
+        fillImage.fillAmount = t;
+
+        // если враг умер — можно скрыть/удалить
+        if (hp <= 0f)
+            Destroy(gameObject);
     }
 }
