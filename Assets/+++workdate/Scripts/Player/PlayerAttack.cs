@@ -121,10 +121,7 @@ namespace ___WorkData.Scripts.Player
             {
                 // ✅ чаще EnemyHealth висит на root, а коллайдер на child
                 EnemyHealth enemy = h.GetComponentInParent<EnemyHealth>();
-                if (enemy == null) enemy = h.GetComponent<EnemyHealth>();
-
-                if (enemy != null && !enemy.isDead)
-                    enemy.TakeDamage(dmg);
+                if (enemy == null) enemy = h.GetComponent<EnemyHealth>(); if (enemy != null && !enemy.isDead)enemy.TakeDamage(dmg);
             }
         }
 
@@ -145,4 +142,4 @@ namespace ___WorkData.Scripts.Player
             Gizmos.DrawWireCube(hitPoint.position, hitBoxSize);
         }
     }
-}
+} 

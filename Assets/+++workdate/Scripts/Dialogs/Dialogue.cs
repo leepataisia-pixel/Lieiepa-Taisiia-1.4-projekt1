@@ -1,16 +1,11 @@
 using UnityEngine;
 
-public class NewMonoBehaviourScript1 : MonoBehaviour
+[System.Serializable]
+public class Dialogue
 {
-    // Start is called once before the first execution of Update after the MonoBehaviour is created
-    void Start()
-    {
-        
-    }
+    public string name;
 
-    // Update is called once per frame
-    void Update()
-    {
-        
-    }
+    // Чтобы удобно вставлять многострочный текст прямо в инспекторе
+    [TextArea(3, 10)]
+    public string[] sentences;
 }

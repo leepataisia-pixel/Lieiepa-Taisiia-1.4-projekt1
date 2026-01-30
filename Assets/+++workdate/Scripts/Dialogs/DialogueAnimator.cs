@@ -1,16 +1,35 @@
 using UnityEngine;
 
-public class NewMonoBehaviourScript2 : MonoBehaviour
+public class DialogueAnimator : MonoBehaviour
 {
-    // Start is called once before the first execution of Update after the MonoBehaviour is created
-    void Start()
+    [Header("Animator кнопки StartDialogue")]
+    public Animator startAnim;   // bool: startOpen
+
+    [Header("DialogueManager (чтобы закрыть диалог при выходе)")]
+    public DialogueManager dm;
+
+    [Header("Тег игрока")]
+    public string playerTag = "Player";
+
+    private void OnTriggerEnter2D(Collider2D other)
     {
-        
+        if (!other.CompareTag(playerTag)) return;
+
+        // Показать кнопку “НАЧАТЬ ДИАЛОГ”
+        if (startAnim != null)
+            startAnim.SetBool("startOpen", true);
     }
 
-    // Update is called once per frame
-    void Update()
+    private void OnTriggerExit2D(Collider2D other)
     {
-        
+        if (!other.CompareTag(playerTag)) return;
+
+        // Спрятать кнопку
+        if (startAnim != null)
+            startAnim.SetBool("startOpen", false);
+
+        // Закрыть диалог
+        if (dm != null)
+            dm.EndDialogue();
     }
 }

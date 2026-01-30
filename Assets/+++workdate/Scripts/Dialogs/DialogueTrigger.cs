@@ -1,16 +1,19 @@
 using UnityEngine;
 
-public class NewMonoBehaviourScript3 : MonoBehaviour
+public class DialogueTrigger : MonoBehaviour
 {
-    // Start is called once before the first execution of Update after the MonoBehaviour is created
-    void Start()
-    {
-        
-    }
+    public Dialogue dialogue;           // сюда вставляешь имя и фразы
+    public DialogueManager manager;     // сюда перетащи объект DialogueManager из сцены
 
-    // Update is called once per frame
-    void Update()
+    // Эту функцию вызываем из кнопки StartDialogue -> OnClick()
+    public void TriggerDialogue()
     {
-        
+        if (manager == null)
+        {
+            Debug.LogError("DialogueTrigger: manager не назначен в инспекторе!");
+            return;
+        }
+
+        manager.StartDialogue(dialogue);
     }
 }
