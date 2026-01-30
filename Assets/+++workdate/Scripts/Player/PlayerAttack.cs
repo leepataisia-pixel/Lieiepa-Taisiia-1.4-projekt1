@@ -20,7 +20,9 @@ namespace ___WorkData.Scripts.Player
         [Header("Hitbox")]
         [SerializeField] private Transform hitPoint;
         [SerializeField] private Vector2 hitBoxSize = new Vector2(1.2f, 0.8f);
-        [SerializeField] private LayerMask enemyLayers;
+
+        // ✅ ВАЖНО: сюда поставь Layer "Boss"
+        [SerializeField] private LayerMask bossLayers;
 
         [Header("Damage")]
         [SerializeField] private float damage10 = 20f;
@@ -70,9 +72,11 @@ namespace ___WorkData.Scripts.Player
 
         private void Update()
         {
+            // Тест: принудительно проиграть атаку
             if (enableForcePlayTest && Keyboard.current != null && Keyboard.current.kKey.wasPressedThisFrame)
                 _anim.Play(attack10StateName, actionLayerIndex, 0f);
 
+            // Если не используешь Input Actions — атакуем ПКМ
             if (!useInputActions)
             {
                 if (Mouse.current != null && Mouse.current.rightButton.wasPressedThisFrame)
@@ -87,6 +91,7 @@ namespace ___WorkData.Scripts.Player
             if (Time.timeScale == 0f) return;
             if (_player != null && _player.HP <= 0f) return;
 
+            // Если задержка между кликами большая — сброс комбо
             if (Time.time - _lastClickTime > comboResetTime)
                 _clickCount = 0;
 
@@ -96,6 +101,8 @@ namespace ___WorkData.Scripts.Player
             int actionId = ResolveActionID(_clickCount);
 
             _anim.SetInteger(Hash_ActionID, actionId);
+
+            // Триггер запуска атаки (как у тебя в Animator)
             _anim.ResetTrigger(Hash_ActionTrigger);
             _anim.SetTrigger(Hash_ActionTrigger);
         }
@@ -107,21 +114,33 @@ namespace ___WorkData.Scripts.Player
             return 10;
         }
 
-        // Animation Event (вызывается из клипа атаки)
+        /// <summary>
+        /// Animation Event (вызывается из клипа атаки в момент удара).
+        /// Бьём ТОЛЬКО босса: ищем BossHealth на объекте/в родителях.
+        /// </summary>
         public void OnAttackHit()
         {
             if (hitPoint == null) return;
 
-            int actionId = _anim.GetInteger(Hash_ActionID);
-            float dmg = GetDamage(actionId);
+            int actionId = _anim.GetInteger(Hash_ActionID);float dmg = GetDamage(actionId);
 
-            var hits = Physics2D.OverlapBoxAll(hitPoint.position, hitBoxSize, 0f, enemyLayers);
+            // Ищем коллайдеры босса в хитбоксе
+            Collider2D[] hits = Physics2D.OverlapBoxAll(hitPoint.position, hitBoxSize, 0f, bossLayers);
 
-            foreach (var h in hits)
+            foreach (Collider2D h in hits)
             {
-                // ✅ чаще EnemyHealth висит на root, а коллайдер на child
-                EnemyHealth enemy = h.GetComponentInParent<EnemyHealth>();
-                if (enemy == null) enemy = h.GetComponent<EnemyHealth>(); if (enemy != null && !enemy.isDead)enemy.TakeDamage(dmg);
+                // ✅ Часто коллайдер на child, а BossHealth на root
+                BossHealth bossHealth = h.GetComponentInParent<BossHealth>();
+                if (bossHealth == null)
+                    bossHealth = h.GetComponent<BossHealth>();
+
+                if (bossHealth == null) continue;
+                if (bossHealth.isDead) continue;
+
+                bossHealth.TakeDamage(dmg);
+
+                // Если нужно, чтобы один удар бил только один раз — можно выйти:
+                // break;
             }
         }
 
@@ -142,4 +161,4 @@ namespace ___WorkData.Scripts.Player
             Gizmos.DrawWireCube(hitPoint.position, hitBoxSize);
         }
     }
-} 
+}
