@@ -6,27 +6,33 @@ using TMPro;
 public class DialogueManager : MonoBehaviour
 {
     [Header("UI (TextMeshPro)")]
-    public TMP_Text dialogueText;   // сюда перетащи DialogueText (TMP)
-    public TMP_Text nameText;       // сюда перетащи NameText (TMP)
+    public TMP_Text dialogueText;
+    public TMP_Text nameText;
 
     [Header("Animators")]
-    public Animator boxAnim;        // Animator окна диалога (bool: boxOpen)
-    public Animator startAnim;      // Animator кнопки StartDialogue (bool: startOpen)
+    public Animator boxAnim;    // bool: boxOpen
+    public Animator startAnim;  // bool: startOpen
 
-    private Queue<string> sentences = new Queue<string>(); // очередь реплик
-    private Coroutine typingCoroutine; // корутина печати
-    private bool isTyping = false;     // печатаем ли сейчас
-    private string currentSentence = ""; // текущая реплика (для “допечатать”)
+    private Queue<string> sentences = new Queue<string>();
+    private Coroutine typingCoroutine;
+    private bool isTyping = false;
+    private string currentSentence = "";
 
-    // СТАРТ ДИАЛОГА
+    private Dialogue currentDialogue;   // текущий диалог
+    public bool IsOpen { get; private set; } = false;
+
+    // === СТАРТ ДИАЛОГА ===
     public void StartDialogue(Dialogue dialogue)
     {
         if (dialogue == null) return;
 
-        // Открываем окно диалога
+        currentDialogue = dialogue;
+        IsOpen = true;
+
+        // Открываем окно
         if (boxAnim != null) boxAnim.SetBool("boxOpen", true);
 
-        // Прячем кнопку старта (как в видео)
+        // Прячем кнопку старта
         if (startAnim != null) startAnim.SetBool("startOpen", false);
 
         // Имя персонажа
@@ -34,26 +40,30 @@ public class DialogueManager : MonoBehaviour
 
         // Загружаем реплики
         sentences.Clear();
-        if (dialogue.sentences != null)
-        {
-            foreach (string s in dialogue.sentences)
-                sentences.Enqueue(s);
-        }
+        foreach (string s in dialogue.sentences)
+            sentences.Enqueue(s);
 
         DisplayNextSentence();
     }
 
-    // СЛЕДУЮЩАЯ РЕПЛИКА (кнопка NextButton вызывает это)
+    // === ВНЕШНИЙ ВЫЗОВ (КНОПКА T) ===
+    public void Next()
+    {
+        if (!IsOpen) return;
+        DisplayNextSentence();
+    }
+
+    // === СЛЕДУЮЩАЯ РЕПЛИКА ===
     public void DisplayNextSentence()
     {
-        // Если текст печатается — по нажатию сразу показываем всю строку
+        // Если печатается — допечатать сразу
         if (isTyping)
         {
             FinishTypingInstant();
             return;
         }
 
-        // Если реплик больше нет — закрываем диалог
+        // Если реплик нет — конец диалога
         if (sentences.Count == 0)
         {
             EndDialogue();
@@ -62,11 +72,13 @@ public class DialogueManager : MonoBehaviour
 
         currentSentence = sentences.Dequeue();
 
-        if (typingCoroutine != null) StopCoroutine(typingCoroutine);
+        if (typingCoroutine != null)
+            StopCoroutine(typingCoroutine);
+
         typingCoroutine = StartCoroutine(TypeSentence(currentSentence));
     }
 
-    // ПЕЧАТАНИЕ ТЕКСТА
+    // === ПЕЧАТАНИЕ ===
     private IEnumerator TypeSentence(string sentence)
     {
         isTyping = true;
@@ -79,17 +91,18 @@ public class DialogueManager : MonoBehaviour
             if (dialogueText != null)
                 dialogueText.text += c;
 
-            yield return null; // 1 символ за кадр
+            yield return null;
         }
 
         isTyping = false;
         typingCoroutine = null;
     }
 
-    // МГНОВЕННО ДОПЕЧАТАТЬ ТЕКУЩУЮ СТРОКУ
+    // === МГНОВЕННО ПОКАЗАТЬ ТЕКСТ ===
     private void FinishTypingInstant()
     {
-        if (typingCoroutine != null) StopCoroutine(typingCoroutine);
+        if (typingCoroutine != null)
+            StopCoroutine(typingCoroutine);
 
         if (dialogueText != null)
             dialogueText.text = currentSentence;
@@ -98,13 +111,19 @@ public class DialogueManager : MonoBehaviour
         typingCoroutine = null;
     }
 
-    // КОНЕЦ ДИАЛОГА (ВАЖНО: public, чтобы другие скрипты могли закрывать)
+    // === КОНЕЦ ДИАЛОГА ===
     public void EndDialogue()
     {
-        if (typingCoroutine != null) StopCoroutine(typingCoroutine);
+        if (!IsOpen) return;
+
+        if (typingCoroutine != null)
+            StopCoroutine(typingCoroutine);
+
         isTyping = false;
         typingCoroutine = null;
+        IsOpen = false;
 
-        if (boxAnim != null) boxAnim.SetBool("boxOpen", false);
+        if (boxAnim != null)
+            boxAnim.SetBool("boxOpen", false);
     }
 }
